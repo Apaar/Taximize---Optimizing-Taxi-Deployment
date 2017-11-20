@@ -94,19 +94,19 @@ def worker_detail():
         q_detail.task_done()
 
 
-def get_detail(place_id):
+def get_detail(place_id,locality,api_key):
     """
     loads data for a given area
     :return:
     """
 
     # places api - detail search - https://developers.google.com/places/web-service/details?hl=de
-    detail_str = detail_url.format(place_id, params["API_key"])
+    detail_str = detail_url.format(place_id, api_key)
     resp = json.loads(requests.get(detail_str, auth=('user', 'pass')).text)
     check_response_code(resp)
     detail = resp["result"]
 
-    searchterm = "{} {}".format(detail["name"], detail["formatted_address"])
+    searchterm = "{} {}".format(detail["name"], locality)
 
     popularity, rating, rating_n = get_populartimes(searchterm)
 
@@ -165,9 +165,9 @@ def get_detail(place_id):
         ]
 
     detail_json["populartimes"] = populartimes_json
-
-    if params["all_places"] or len(detail_json["populartimes"]) > 0:
-        results.append(detail_json)
+    return detail_json
+    #if params["all_places"] or len(detail_json["populartimes"]) > 0:
+    #    results.append(detail_json)
 
 
 def get_populartimes(place_identifier):
@@ -178,12 +178,12 @@ def get_populartimes(place_identifier):
     """
     params_url = {
         "tbm": "map",
-        "hl": "de",
+        "hl": "en",
         "tch": 1,
         "q": urllib.parse.quote_plus(place_identifier)
     }
 
-    search_url = "https://www.google.de/search?" + "&".join(k + "=" + str(v) for k, v in params_url.items())
+    search_url = "https://www.google.co.in/search?" + "&".join(k + "=" + str(v) for k, v in params_url.items())
     logging.info("searchterm: " + search_url)
 
     gcontext = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
@@ -241,7 +241,7 @@ def get_current_popularity(place_identifier):
               "!3b1"
     }
 
-    search_url = "https://www.google.de/search?" + "&".join(k + "=" + str(v) for k, v in params_url.items())
+    search_url = "https://www.google.co.in/search?" + "&".join(k + "=" + str(v) for k, v in params_url.items())
     logging.info("searchterm: " + search_url)
 
     gcontext = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
