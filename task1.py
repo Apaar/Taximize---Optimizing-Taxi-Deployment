@@ -2,11 +2,15 @@ import googlemaps
 import requests
 import time
 import os
-import pickle
+import json
 from crawler import get_detail
 import urllib
 import hashlib
 import json
+import glob
+import pickle
+from clustering import clustering
+from point import Point
 
 
 google_decode_api_key = 'AIzaSyCeiKxOd3WF5fnL_XjcpHTaynEmfgUPRog'
@@ -14,6 +18,10 @@ facebook_api_key = 'EAACEdEose0cBAPbea2ctmI8bdlpz9fAS2X4Sf73IWroarTmjBZANYEhlsBm
 google_api_key = 'AIzaSyAAdDOghckmq0YNN9lSrAG0sJLta1znuCc'
 keywords = ['restaurant', 'cafe', 'bar', 'food']
 maps_client = googlemaps.Client(key=google_api_key)
+
+
+def priority_value(rating, n_ratings, min_ratings, mean_ratings):
+	return ((n_ratings) / (n_ratings + min_ratings)) * mean_ratings + (min_ratings / (n_ratings + min_ratings)) * mean_ratings
 
 
 def get_events_from_facebook(lat, lng, distance=2500, accessToken=facebook_api_key):
@@ -100,9 +108,44 @@ def geocode_facebook_plname(place):
 
 def main():
 	# locality = input("Enter locality: ")
-	# places = maps_client.places(query=locality)
+	locality = 'Indiranagar'
+	itime = int(input("Enter time 0-23: "))
+	iday = int(input("Enter day: "))
+	placesinfo = None
+	with open("places_info.pickle", 'rb') as pfile:
+		placesinfo = pickle.load(pfile)
+	#print(placesinfo)
+	alldetails = list()
+	plist = list()
+	for place in placesinfo:
+		popular_count = -1
+		if place['populartimes']:
+			print(place['populartimes'])
+			day = place['populartimes'][iday]['data']
+			popular_count = day[itime]
+		pt = Point(place['coordinates']['lat'],place['coordinates']['lng'])
+		pt.set_cpop(popular_count)
+		pt.set_nreviews(place['rating_n'])
+		plist.append(pt)
+
+		# alldetails.append([Point(place['coordinates']['lat'],place['coordinates']['lng']),place['rating_n'],popular_count])
+	# print(alldetails)
+	cluster = clustering(plist, 5)
+	flag = cluster.k_means(False)
+	if flag == -1:
+		print("Error")
+	else:
+		cluster.print_clusters(cluster.clusters)
+		print("Cluster means")
+		for point in cluster.means:
+			print(point)
+	'''
+
+
+
+	places = maps_client.places(query=locality)
 	event_list = None
-	# coords = places['results'][0]['geometry']['location']
+	coords = places['results'][0]['geometry']['location']
 
 	if os.path.exists("output.json"):
 		with open("output.json") as infile:
@@ -116,11 +159,19 @@ def main():
 	print("{} events found.".format(len(event_list)))
 	for event in event_list:
 		print('Event: {}'.format(event['name']), end='\r')
-		store_response('events', event['venue']['name'], geocode_facebook_plname(event['venue']['name']))
-	# place_id_list = get_place_ids(coords['lat'], coords['lng'], 'restaurant')
-	# print(place_id_list)
-	# get_place_details(place_id_list, locality)
+	print()
+	res_json = store_response('events', event['venue']['name'], geocode_facebook_plname(event['venue']['name']))
+	for file in glob.iglob("events/*.json"):
+		with open(file) as f:
+			fjson = json.load(f)
+			resp_json = get_place_details(list(fjson['place_id']), locality)
+			with open("events/details-" + file.json, 'w') as ofile:
+				json.dump(resp_json[0], ofile)
 
+	place_id_list = get_place_ids(coords['lat'], coords['lng'], 'restaurant')
+	# print(place_id_list)
+	get_place_details(place_id_list, locality)
+	'''
 
 def get_place_ids_per_type(lat, lng, key_list):
 	place_id_list = list()
@@ -132,7 +183,7 @@ def get_place_ids_per_type(lat, lng, key_list):
 def get_place_ids(lat, lng, key):
 	place_id_list = list()
 
-	if os.path.exists(str(lat) + '-' + str(lng) + '.pickle'):
+	if os.path.exists(str(lat) + '-' + str(lng) + '.json'):
 		place_id_list = load_place_ids(lat, lng)
 
 	count = 0
@@ -145,7 +196,6 @@ def get_place_ids(lat, lng, key):
 		time.sleep(2)
 		places_nearby = maps_client.places_nearby(location=(
 			lat, lng), radius=1500, keyword=key, page_token=places_nearby['next_page_token'])
-		# print(places_nearby)
 		for place in places_nearby['results']:
 			place_id_list.append(place['place_id'])
 		count = count + 1
@@ -154,30 +204,30 @@ def get_place_ids(lat, lng, key):
 
 
 def load_place_ids(lat, lng):
-	with open(str(lat) + '-' + str(lng) + '.pickle', 'rb') as file:
-		return pickle.load(file)
+	with open(get_hash_name(lat=lat, lng=lng) + '.json') as file:
+		return json.load(file)
 
 
 def save_place_ids(lat, lng, place_id_list):
-	with open(str(lat) + '-' + str(lng) + '.pickle', 'wb') as file:
-		pickle.dump(place_id_list, file)
+	with open(get_hash_name(lat=lat, lng=lng) + '.json', 'w') as file:
+		json.dump(place_id_list, file, indent='\t')
 	print("Place IDs Cached")
 
 
 def load_places_info():
-	with open('places_info.pickle', 'rb') as file:
-		return pickle.load(file)
+	with open('places_info.json') as file:
+		return json.load(file)
 
 
 def save_places_info(places_info):
-	with open('places_info.pickle', 'wb') as file:
-		pickle.dump(places_info, file)
+	with open('places_info.json', 'w') as file:
+		json.dump(places_info, file, indent='\t')
 	print("Place Info Cached")
 
 
 def get_place_details(place_id_list, locality):
 	places_info = list()
-	if os.path.exists('places_info.pickle'):
+	if os.path.exists('places_info.json'):
 		places_info = load_places_info()
 	for place_id in place_id_list:
 		place_info = get_detail(place_id, locality, google_api_key)
